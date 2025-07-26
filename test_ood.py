@@ -41,9 +41,19 @@ else:
 ### Load and preprocess data ###
 dataset_ind, dataset_ood_te = load_dataset(args)
 
+# 处理不同类型的OOD数据集格式
+if isinstance(dataset_ood_te, tuple):
+    # Structure OOD: dataset_ood_te = (dataset_test_id, dataset_ood)
+    dataset_test_id, dataset_ood = dataset_ood_te
+    ood_idx = dataset_ood.node_idx
+    print(f"Structure OOD detected: ID test nodes {len(dataset_test_id.node_idx)}, OOD nodes {len(dataset_ood.node_idx)}")
+else:
+    # Feature OOD or Label OOD: dataset_ood_te is a single dataset
+    ood_idx = dataset_ood_te.node_idx
+    print(f"Feature/Label OOD detected: OOD nodes {len(ood_idx)}")
+
 edge_index = dataset_ind.edge_index
 num_nodes = dataset_ind.num_nodes
-ood_idx = dataset_ood_te.node_idx
 c = dataset_ind.y.max().item() + 1
 d = dataset_ind.num_node_features
 model = parse_method(args, dataset_ind, num_nodes, c, d)
@@ -104,8 +114,24 @@ for run in range(args.runs):
         scores = ood.detect(logit, dataset_ind, torch.concat([split_idx['train'], split_idx['valid']]), split_idx['test'], ood_idx, args)
 
     scores = scores.to(device)
-    iid_score = scores[split_idx['test']]
-    ood_score = scores[ood_idx]
+    
+    # 根据OOD类型选择正确的ID测试集
+    if isinstance(dataset_ood_te, tuple):
+        # Structure OOD: 使用预定义的ID测试集
+        dataset_test_id, dataset_ood = dataset_ood_te
+        # 需要将scores映射到正确的节点索引
+        # 对于structure OOD，我们需要分别评估ID测试集和OOD测试集
+        
+        # 获取ID测试集的分数 - 这需要根据具体的节点映射来处理
+        # 由于structure_shift_dataset改变了节点索引，我们需要特殊处理
+        print("Warning: Structure OOD evaluation may need additional index mapping")
+        iid_score = scores[split_idx['test']]  # 使用原始的测试分割
+        ood_score = scores[ood_idx]
+    else:
+        # Feature/Label OOD: 使用标准的测试分割
+        iid_score = scores[split_idx['test']]
+        ood_score = scores[ood_idx]
+        
     result = evaluate_ood(iid_score, ood_score)[:-1]
     print(f'{args.dataset}'+'\t'.join([str(x) for x in result]))
     logger.add_result(run, result)
