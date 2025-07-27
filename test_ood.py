@@ -56,10 +56,8 @@ edge_index = dataset_ind.edge_index
 num_nodes = dataset_ind.num_nodes
 c = dataset_ind.y.max().item() + 1
 d = dataset_ind.num_node_features
-model = parse_method(args, dataset_ind, num_nodes, c, d)
 
 print(f"num nodes {num_nodes} | num classes {c} | num node feats {d}")
-print('MODEL:', model)
 
 # using rocauc as the eval function
 if args.rocauc or args.dataset in ('yelp-chi', 'twitch-e', 'ogbn-proteins', 'genius'):
@@ -69,12 +67,22 @@ else:
     criterion = nn.NLLLoss()
     eval_func = eval_acc
 
-# dataset_ind.edge_index = to_undirected(dataset_ind.edge_index)
-
 logger = Logger(args.runs, args)
-model_path = f'{args.dataset}-{args.sub_dataset}' if args.sub_dataset else f'{args.dataset}'
-model_dir = f'checkpoints/{model_path}/{args.method}'
-print(model_dir)
+
+# 设置logits文件路径
+if args.logits_file:
+    # 使用指定的单个logits文件（适用于所有runs）
+    logits_path = args.logits_file
+    print(f"Using single logits file: {logits_path}")
+elif args.logits_dir:
+    # 使用指定的logits目录
+    logits_dir = args.logits_dir
+    print(f"Looking for logits in: {logits_dir}")
+else:
+    # 使用默认路径
+    model_path = f'{args.dataset}-{args.sub_dataset}' if args.sub_dataset else f'{args.dataset}'
+    logits_dir = f'logits/{model_path}/{args.method}'
+    print(f"Looking for logits in default path: {logits_dir}")
 
 ood = eval(args.ood)(args)
 ### Testing ###
@@ -85,17 +93,26 @@ for run in range(args.runs):
     set_random_seed(run + args.seed)
     split_idx = rand_splits(dataset_ind.node_idx, train_prop=args.train_prop, valid_prop=args.valid_prop)
 
-    if glob.glob(f'{model_dir}/logit{run}*.pt'):
-        print(f'logit ckpt{run} exists, load it ...')
-        ckpt = glob.glob(f'{model_dir}/logit{run}*.pt')[0]
-        logit = torch.load(ckpt, map_location=device)
+    # 加载预计算的logits
+    if args.logits_file:
+        # 使用单个logits文件（所有runs共用）
+        logit_path = args.logits_file
     else:
-        checkpoint = glob.glob(f'{model_dir}/model{run}*.pt')[0]
-        model.load_state_dict(torch.load(checkpoint, map_location=device))
-        model.eval()
-
-        with torch.no_grad():
-            logit = model(dataset_ind)
+        # 使用按run编号的logits文件
+        logit_path = f'{logits_dir}/logit{run}.pt'
+    
+    if os.path.exists(logit_path):
+        print(f'Loading logits from: {logit_path}')
+        logit = torch.load(logit_path, map_location=device)
+        print(f'Logits shape: {logit.shape}')
+    else:
+        print(f"❌ Logits file not found: {logit_path}")
+        if args.force_logits:
+            print("Exiting because --force_logits is enabled.")
+            sys.exit(1)
+        else:
+            print("Skipping this run...")
+            continue
     
     if args.ood in ['MSP', 'Energy', 'ODIN']:
         scores = ood.detect(logit)
@@ -104,7 +121,7 @@ for run in range(args.runs):
     elif args.ood == 'Mahalanobis':
         scores = ood.detect(logit, torch.concat([split_idx['train'], split_idx['valid']]), torch.concat([split_idx['test'], dataset_ood_te.node_idx]), dataset_ind.y)
     elif args.ood == 'KNN':
-        score_ckpt = f'{model_dir}/score{run}.pt'
+        score_ckpt = f'{logits_dir}/score{run}.pt'
         if os.path.exists(score_ckpt):
             scores = torch.load(score_ckpt, map_location='cpu')
         else:
