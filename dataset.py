@@ -14,6 +14,7 @@ import torch_geometric.transforms as T
 
 from load_data import load_twitch, load_fb100, load_twitch_gamer, DATAPATH
 from data_utils import rand_splits, rand_train_test_idx, even_quantile_labels, set_random_seed, dataset_drive_url
+from load_dgl_data import load_dgl_dataset, create_custom_ood_split
 
 from torch_geometric.datasets import Planetoid, Amazon, Coauthor, Reddit2, Actor, WebKB
 from torch_geometric.transforms import NormalizeFeatures
@@ -119,6 +120,16 @@ def load_dataset(args, sub_dataname=''):
         dataset_ind, dataset_ood_te = load_wiki()
     elif args.dataset in ('cora', 'amazon-photo', 'coauthor-cs', 'reddit2'):
         dataset_ind, dataset_ood_te = load_graph_dataset(args)
+    elif args.dataset == 'custom-dgl':
+        # 自定义DGL数据集加载
+        dataset_ind, dataset_ood_te = load_dgl_dataset(args.data_path, args.dataset_name)
+        if dataset_ood_te is None and hasattr(args, 'create_ood_split') and args.create_ood_split:
+            # 如果需要创建OOD分割
+            dataset_ind, dataset_ood_te = create_custom_ood_split(
+                dataset_ind, 
+                ood_ratio=getattr(args, 'ood_ratio', 0.2),
+                ood_type=getattr(args, 'ood_type', 'random')
+            )
     else:
         raise ValueError('Invalid dataname')
     return dataset_ind, dataset_ood_te
