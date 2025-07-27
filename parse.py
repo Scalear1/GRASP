@@ -118,6 +118,17 @@ def parser_add_main_args(parser):
                         help='set the eval function to rocauc')
     parser.add_argument('--num_mlp_layers', type=int, default=1,
                         help='number of mlp layers in h2gcn')
+    # DGL dataset related arguments
+    parser.add_argument('--data_path', type=str, default='', 
+                        help='path prefix for DGL dataset files')
+    parser.add_argument('--dataset_name', type=str, default='',
+                        help='name of the DGL dataset file')
+    parser.add_argument('--create_ood_split', action='store_true',
+                        help='whether to create OOD split from the dataset')
+    parser.add_argument('--ood_ratio', type=float, default=0.2,
+                        help='ratio of nodes to use as OOD')
+    parser.add_argument('--logits_path', type=str, default='',
+                        help='path to pre-computed logits file')
     parser.add_argument('--print_prop', action='store_true',
                         help='print proportions of predicted class')
     parser.add_argument('--train_prop', type=float, default=.1,
