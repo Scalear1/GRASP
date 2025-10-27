@@ -119,6 +119,8 @@ def load_dataset(args, sub_dataname=''):
         dataset_ind, dataset_ood_te = load_wiki()
     elif args.dataset in ('cora', 'amazon-photo', 'coauthor-cs', 'reddit2'):
         dataset_ind, dataset_ood_te = load_graph_dataset(args)
+    elif args.dataset == 'your_dgl_dataset':  # 添加您的数据集名称
+        dataset_ind, dataset_ood_te = load_your_dgl_dataset(args)
     else:
         raise ValueError('Invalid dataname')
     return dataset_ind, dataset_ood_te
@@ -713,4 +715,51 @@ def load_wiki():
     dataset_ood_te.node_idx = idx[label==0]
 
     return dataset_ind, dataset_ood_tr, dataset_ood_te """
+
+
+def load_your_dgl_dataset(args):
+    """
+    加载您的DGL格式数据集并生成structure OOD数据
+    """
+    from dgl import load_graphs
+    import torch
+    from torch_geometric.data import Data
+    from data_utils import set_random_seed
+    
+    # 根据您的数据集路径设置
+    prefix = "path/to/your/dataset/"  # 请修改为您的数据集路径
+    name = args.dataset  # 或者根据需要修改
+    
+    # 加载DGL图数据
+    graph = load_graphs(prefix + name)[0][0] 
+    node_feats = graph.ndata['feature']
+    node_labels = graph.ndata['label']
+    edge_index = graph.edges()
+    
+    # 转换为PyTorch Geometric格式
+    # DGL的edges()返回(src, dst)，需要stack成[2, num_edges]格式
+    edge_index = torch.stack([edge_index[0], edge_index[1]], dim=0)
+    
+    # 创建PyTorch Geometric Data对象
+    data = Data(
+        x=node_feats,           # 节点特征
+        edge_index=edge_index,  # 边索引
+        y=node_labels,          # 节点标签
+        num_nodes=node_feats.shape[0]
+    )
+    
+    # 添加node_idx属性（用于后续分割）
+    data.node_idx = torch.arange(data.num_nodes)
+    
+    # 使用structure_shift_dataset生成OOD数据
+    # 注意：structure_shift_dataset需要run参数，这里使用默认值0
+    run = getattr(args, 'run', 0)  # 如果args中没有run，使用默认值0
+    
+    # 生成结构偏移的OOD数据
+    dataset_train_id, dataset_test_id, dataset_ood = structure_shift_dataset(
+        data, run, args, ood_budget_per_graph=0.1
+    )
+    
+    # 返回格式：(训练用的ID数据, (ID测试数据, OOD测试数据))
+    return dataset_train_id, (dataset_test_id, dataset_ood)
 
